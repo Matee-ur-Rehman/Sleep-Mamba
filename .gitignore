@@ -1,0 +1,21 @@
+# Data — never commit raw or preprocessed data to git (too large, and
+# preprocessed data lives in the Kaggle Dataset instead)
+/data/
+/outputs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
