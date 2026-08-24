@@ -80,6 +80,12 @@ class SelectiveSSM(nn.Module):
         super().__init__()
         self.d_inner = d_inner
         self.d_state = d_state
+        # dt_rank default MUST match real mamba-ssm's convention: based on
+        # d_model (pre-expansion), NOT d_inner (post-expansion). This was a
+        # bug in an earlier version of this file, caught by the Kaggle
+        # equivalence check against real mamba-ssm (x_proj output dim
+        # mismatch: 48 vs 40 with d_model=128, expand=2). Callers (MambaBlock)
+        # must now explicitly pass dt_rank computed from d_model.
         self.dt_rank = dt_rank if dt_rank is not None else max(d_inner // 16, 1)
 
         # Input-dependent projections: from u -> (Delta, B, C)
@@ -135,6 +141,9 @@ class MambaBlock(nn.Module):
     def __init__(self, d_model, d_state=16, d_conv=4, expand=2):
         super().__init__()
         self.d_inner = expand * d_model
+        # dt_rank computed from d_model (pre-expansion), matching real
+        # mamba-ssm's default convention exactly -- see SelectiveSSM docstring.
+        dt_rank = math.ceil(d_model / 16)
 
         self.in_proj_u = nn.Linear(d_model, self.d_inner, bias=False)
         self.in_proj_v = nn.Linear(d_model, self.d_inner, bias=False)
@@ -143,7 +152,7 @@ class MambaBlock(nn.Module):
             self.d_inner, self.d_inner, kernel_size=d_conv,
             groups=self.d_inner, padding=d_conv - 1, bias=True,
         )
-        self.ssm = SelectiveSSM(self.d_inner, d_state=d_state)
+        self.ssm = SelectiveSSM(self.d_inner, d_state=d_state, dt_rank=dt_rank)
         self.out_proj = nn.Linear(self.d_inner, d_model, bias=False)
 
     def forward(self, x):
