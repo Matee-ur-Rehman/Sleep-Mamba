@@ -49,7 +49,7 @@ ASSUMPTIONS / STRUCTURAL DECISIONS FLAGGED:
 import torch
 import torch.nn as nn
 
-from mamba_ref import MambaBlock
+from mamba_backend import MambaBlock
 
 
 class DualAxisMambaBlock(nn.Module):

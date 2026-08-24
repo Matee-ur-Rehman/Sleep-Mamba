@@ -24,7 +24,7 @@ ASSUMPTIONS FLAGGED (same reasoning as mamba_ref.py / dam.py):
 import torch
 import torch.nn as nn
 
-from mamba_ref import MambaBlock
+from mamba_backend import MambaBlock
 
 
 class SequenceBiMambaLayer(nn.Module):
