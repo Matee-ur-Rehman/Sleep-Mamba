@@ -57,6 +57,24 @@ class DualAxisMambaBlock(nn.Module):
     Single DAM layer. Shape-preserving: (batch, D, E) -> (batch, D, E).
     Implements Eq. 9-12 (everything except the final AvgPool of Eq. 13,
     which lives in DAMStack below so multiple DAM layers can be chained).
+
+    ======================================================================
+    STABILITY FIX (added after observing training divergence on real
+    Kaggle GPU data -- loss escalating from ~1.6 to constant 18.4 across
+    epochs, model collapsing to input-independent output):
+    ======================================================================
+    Every standard Mamba-based architecture (the original Mamba paper's
+    own `Block` wrapper, Vision Mamba, VMamba) wraps each Mamba layer in
+    a PRE-NORM RESIDUAL connection when stacking multiple layers -- this
+    is near-universal practice, not a stylistic choice, and its absence
+    is the most likely cause of the signal-magnitude blowup we observed
+    when stacking 2 DAM layers with no normalization between them. The
+    paper's Fig. 1(b) does not explicitly draw a residual/norm path, but
+    it also does not contradict one, and every real Mamba-based system
+    this paper builds on uses this pattern. Added here as PRE-NORM
+    (LayerNorm before the DAM transform) + residual (input added back
+    to the transform's output), matching standard practice.
+    ======================================================================
     """
 
     def __init__(self, D=128, E=20, d_state=16, d_conv=4, expand=2):
@@ -64,6 +82,7 @@ class DualAxisMambaBlock(nn.Module):
         self.D = D
         self.E = E
 
+        self.norm = nn.LayerNorm(D)  # applied over the D (channel) axis
         self.gate_proj = nn.Conv1d(D, D, kernel_size=1)  # Eq. 9's "Linear", channels-first form
 
         # Eq. 10: SSM_temp scans the temporal axis E, feature dim = D
@@ -71,23 +90,29 @@ class DualAxisMambaBlock(nn.Module):
         # Eq. 11: SSM_mod scans the modality/channel axis D, feature dim = E
         self.ssm_mod = MambaBlock(d_model=E, d_state=d_state, d_conv=d_conv, expand=expand)
 
-    def forward(self, F):
-        # F: (batch, D, E)
-        V = torch.sigmoid(self.gate_proj(F))  # (batch, D, E), Eq. 9
+    def forward(self, F_in):
+        # F_in: (batch, D, E)
+
+        # --- pre-norm: LayerNorm over D, applied via transpose since D is dim 1 ---
+        F_normed = self.norm(F_in.transpose(1, 2)).transpose(1, 2)  # (batch, D, E)
+
+        V = torch.sigmoid(self.gate_proj(F_normed))  # (batch, D, E), Eq. 9
 
         # --- intra-modal temporal path, Eq. 10 ---
-        x_temp = F.transpose(1, 2)              # (batch, E, D)
-        z_intra = self.ssm_temp(x_temp)          # (batch, E, D)
-        z_intra = z_intra.transpose(1, 2)        # (batch, D, E)
+        x_temp = F_normed.transpose(1, 2)          # (batch, E, D)
+        z_intra = self.ssm_temp(x_temp)              # (batch, E, D)
+        z_intra = z_intra.transpose(1, 2)            # (batch, D, E)
         z_intra = z_intra * V
 
         # --- inter-modal structural path, Eq. 11 ---
-        z_inter = self.ssm_mod(F)                 # (batch, D, E) treated as (batch, L=D, d_model=E)
+        z_inter = self.ssm_mod(F_normed)               # (batch, D, E) treated as (batch, L=D, d_model=E)
         z_inter = z_inter * V
 
         # --- fuse, Eq. 12 ---
-        Z = z_intra + z_inter                     # (batch, D, E)
-        return Z
+        Z = z_intra + z_inter                         # (batch, D, E)
+
+        # --- residual connection (NOT explicit in paper, added for stability) ---
+        return F_in + Z
 
 
 class DAMStack(nn.Module):

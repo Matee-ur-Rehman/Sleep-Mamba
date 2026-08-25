@@ -29,23 +29,35 @@ from mamba_backend import MambaBlock
 
 class SequenceBiMambaLayer(nn.Module):
     """Single SBM layer: forward Mamba + backward Mamba (on flipped sequence,
-    flipped back), summed. Eq. 14-16. Shape-preserving: (batch,T,D)->(batch,T,D)."""
+    flipped back), summed. Eq. 14-16. Shape-preserving: (batch,T,D)->(batch,T,D).
+
+    STABILITY FIX: pre-norm + residual added, same reasoning as DAM (see
+    dam.py's DualAxisMambaBlock docstring) -- standard practice for
+    stacking Mamba layers, absent from the paper's Fig. 1(c) but likely
+    a necessary unstated detail, confirmed by observed training
+    divergence without it.
+    """
 
     def __init__(self, D=128, d_state=16, d_conv=4, expand=2):
         super().__init__()
+        self.norm = nn.LayerNorm(D)
         self.mamba_fwd = MambaBlock(d_model=D, d_state=d_state, d_conv=d_conv, expand=expand)
         self.mamba_bwd = MambaBlock(d_model=D, d_state=d_state, d_conv=d_conv, expand=expand)
 
-    def forward(self, G):
-        # G: (batch, T, D)
-        O_fwd = self.mamba_fwd(G)  # Eq. 14
+    def forward(self, G_in):
+        # G_in: (batch, T, D)
+        G_normed = self.norm(G_in)
 
-        G_flipped = torch.flip(G, dims=[1])
+        O_fwd = self.mamba_fwd(G_normed)  # Eq. 14
+
+        G_flipped = torch.flip(G_normed, dims=[1])
         O_bwd_flipped = self.mamba_bwd(G_flipped)
         O_bwd = torch.flip(O_bwd_flipped, dims=[1])  # Eq. 15: flip back to original order
 
         O = O_fwd + O_bwd  # Eq. 16
-        return O
+
+        # residual connection (NOT explicit in paper, added for stability)
+        return G_in + O
 
 
 class SBMStack(nn.Module):
