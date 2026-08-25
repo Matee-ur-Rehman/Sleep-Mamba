@@ -73,10 +73,13 @@ class SleepMamba(nn.Module):
 def _quick_selfcheck():
     print("=== Step 4d self-check: Full SleepMamba model ===\n")
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Running self-check on device: {device}\n")
+
     for T in (5, 15, 21, 30):
-        model = SleepMamba(n_modalities=2, D=128, E=20, n_classes=5)
+        model = SleepMamba(n_modalities=2, D=128, E=20, n_classes=5).to(device)
         batch = 2
-        dummy_X = torch.randn(batch, T, 2, 3000)
+        dummy_X = torch.randn(batch, T, 2, 3000, device=device)
 
         y_hat = model(dummy_X)
         n_params = sum(p.numel() for p in model.parameters())
@@ -93,7 +96,7 @@ def _quick_selfcheck():
     print(f"\nPaper's reported total (Table 5, T=5, EEG+EOG): 1,760,000 params (1.76M)")
     print(f"Our T=5 model: {n_params:,} params" if T == 5 else "")
 
-    model5 = SleepMamba(n_modalities=2, D=128, E=20, n_classes=5)
+    model5 = SleepMamba(n_modalities=2, D=128, E=20, n_classes=5).to(device)
     n_params5 = sum(p.numel() for p in model5.parameters())
     print(f"\nOur SleepMamba (T=5, EEG+EOG) total parameter count: {n_params5:,}")
     print(f"Paper's reported total:                                1,760,000")

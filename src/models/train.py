@@ -192,7 +192,8 @@ def _quick_selfcheck():
 
     print("=== Step 5 self-check: training loop smoke test (synthetic data) ===\n")
 
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Running smoke test on device: {device}\n")
     T = 5
     batch = 4
     n_train_samples = 16
