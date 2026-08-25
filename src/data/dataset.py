@@ -84,9 +84,12 @@ class SleepEDF78WindowedDataset(Dataset):
         # Build an index of (file_path, window_start_epoch) for every valid,
         # non-overlapping, full-length window across all selected recordings.
         self.window_index = []
+        self._cache = {}
         for f in self.recording_files:
             data = np.load(f)
-            n_epochs = data["y"].shape[0]
+            x_arr, y_arr = data["x"], data["y"]
+            self._cache[f] = (x_arr, y_arr)          # cache now, avoid re-reading later
+            n_epochs = y_arr.shape[0]
             n_full_windows = n_epochs // self.T  # drop leftover remainder
             for w in range(n_full_windows):
                 start = w * self.T
@@ -103,10 +106,10 @@ class SleepEDF78WindowedDataset(Dataset):
 
     def __getitem__(self, idx):
         f, start = self.window_index[idx]
-        data = np.load(f)
-        x = data["x"][start:start + self.T]        # (T, 3, 3000)
-        y = data["y"][start:start + self.T]          # (T,)
-        x = x[:, self.channel_idx, :]                 # (T, n_channels, 3000)
+        x_full, y_full = self._cache[f]          # cached in-memory arrays, no disk I/O
+        x = x_full[start:start + self.T]            # (T, 3, 3000)
+        y = y_full[start:start + self.T]              # (T,)
+        x = x[:, self.channel_idx, :]                   # (T, n_channels, 3000)
         return torch.from_numpy(x).float(), torch.from_numpy(y).long()
 
 
@@ -131,8 +134,6 @@ def _quick_selfcheck(preprocessed_dir, splits_json_path):
 
 
 if __name__ == "__main__":
-
     PREPROCESSED_DIR = r"D:\Sleep Mamba\outputs\preprocessed"
     SPLITS_JSON = r"D:\Sleep Mamba\outputs\preprocessed\splits_sleepedf78.json"
-
     _quick_selfcheck(PREPROCESSED_DIR, SPLITS_JSON)

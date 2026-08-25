@@ -59,8 +59,8 @@ def main():
     )
     print(f"Train windows: {len(train_ds):,}   Test windows: {len(test_ds):,}")
 
-    train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=2)
-    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, num_workers=2)
+    train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=0)
+    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, num_workers=0)
 
     print("\nBuilding model...")
     model = SleepMamba(n_modalities=2, D=128, E=20, n_classes=5).to(device)
