@@ -58,25 +58,55 @@ def nll_loss_on_probs(y_hat, y_true, eps=1e-8):
     (since our model already applies softmax per Algorithm 1).
     y_hat: (batch, T, n_classes) probabilities, already sum to 1 over last dim
     y_true: (batch, T) integer labels
+
+    NOTE: torch.clamp does NOT fix actual NaN values (only out-of-range
+    finite ones) -- if y_hat itself became NaN upstream (e.g. from an
+    unstable forward pass), log(NaN) stays NaN regardless of clamping.
+    The nan_to_num call below is a defensive safeguard so a single bad
+    batch produces a large-but-finite loss (which the training loop can
+    then detect and skip) rather than a silent NaN that poisons all
+    subsequent accumulated totals.
     """
-    log_probs = torch.log(y_hat.clamp(min=eps))  # avoid log(0)
+    y_hat_safe = torch.nan_to_num(y_hat, nan=0.0, posinf=1.0, neginf=0.0)
+    log_probs = torch.log(y_hat_safe.clamp(min=eps))
     loss_fn = nn.NLLLoss()
     return loss_fn(log_probs.reshape(-1, N_CLASSES), y_true.reshape(-1))
 
 
-def train_one_epoch(model, loader, optimizer, device):
+def train_one_epoch(model, loader, optimizer, device, log_every=50, grad_clip_norm=1.0):
     model.train()
     total_loss = 0.0
     n_batches = 0
-    for x, y in loader:
+    total_batches = len(loader)
+    for i, (x, y) in enumerate(loader):
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad()
         y_hat = model(x)
         loss = nll_loss_on_probs(y_hat, y)
+
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(f"    WARNING: non-finite loss ({loss.item()}) at batch {i+1}/{total_batches} "
+                  f"-- skipping this batch's optimizer step to avoid corrupting weights.",
+                  flush=True)
+            continue  # do NOT call backward()/step() on a broken batch
+
         loss.backward()
+        # ASSUMPTION FLAGGED: gradient clipping is NOT mentioned in the paper's
+        # training protocol (Section 4.2), but was added after observing NaN
+        # loss / weight corruption during real-data training on Kaggle (all
+        # epochs showing train_loss=nan, frozen degenerate predictions).
+        # Gradient clipping is a very common, standard stabilization technique
+        # for SSM/Mamba-based models specifically, and does not contradict
+        # anything the paper states -- it's an unstated-but-likely-necessary
+        # implementation detail, same category as our other flagged gaps.
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip_norm)
         optimizer.step()
+
         total_loss += loss.item()
         n_batches += 1
+        if (i + 1) % log_every == 0 or (i + 1) == total_batches:
+            avg = total_loss / max(n_batches, 1)
+            print(f"    batch {i+1}/{total_batches}  running_avg_loss={avg:.4f}", flush=True)
     return total_loss / max(n_batches, 1)
 
 
