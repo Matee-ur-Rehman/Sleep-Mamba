@@ -121,11 +121,17 @@ class MultimodalLocalEncoder(nn.Module):
     """
     Full MLE: two MSCNN branches (small/large scale), each refined by its
     own SDAM, concatenated, then projected back to D=128 via DenseLayer.
+
+    use_sdam=False (Table 7 ablation "w/o SDAM"): skips both SDAM calls,
+    concatenating raw branch outputs directly. Added for the architecture
+    ablation study; default True preserves the original, already-verified
+    behavior used for all Table 3/6 reproduction runs.
     """
 
-    def __init__(self, n_modalities=2, D=128, E=20, dropout=0.5):
+    def __init__(self, n_modalities=2, D=128, E=20, dropout=0.5, use_sdam=True):
         super().__init__()
         self.E = E
+        self.use_sdam = use_sdam
         self.small_branch = MSCNNBranch(
             in_channels=n_modalities, first_kernel=50, first_stride=6,
             target_E=E, dropout=dropout,
@@ -134,8 +140,9 @@ class MultimodalLocalEncoder(nn.Module):
             in_channels=n_modalities, first_kernel=400, first_stride=50,
             target_E=E, dropout=dropout,
         )
-        self.sdam_small = SparseDualAttentionModule(channels=128)
-        self.sdam_large = SparseDualAttentionModule(channels=128)
+        if use_sdam:
+            self.sdam_small = SparseDualAttentionModule(channels=128)
+            self.sdam_large = SparseDualAttentionModule(channels=128)
 
         self.dense = nn.Conv1d(256, D, kernel_size=1)  # "DenseLayer" applied per time step
         self.dense_act = nn.GELU()  # not explicitly drawn in Fig. 2 — our addition
@@ -146,8 +153,9 @@ class MultimodalLocalEncoder(nn.Module):
         f_small = self.small_branch(x)          # (batch, 128, E)
         f_large = self.large_branch(x)          # (batch, 128, E)
 
-        f_small = self.sdam_small(f_small)       # (batch, 128, E)
-        f_large = self.sdam_large(f_large)       # (batch, 128, E)
+        if self.use_sdam:
+            f_small = self.sdam_small(f_small)       # (batch, 128, E)
+            f_large = self.sdam_large(f_large)       # (batch, 128, E)
 
         f_cat = torch.cat([f_small, f_large], dim=1)  # (batch, 256, E)
         f = self.dense(f_cat)                    # (batch, D, E)
