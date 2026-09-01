@@ -41,7 +41,7 @@ STAGE_COLORS = ["#FFD700", "#87CEEB", "#4CAF50", "#9C27B0", "#FF5722"]
 
 
 @torch.no_grad()
-def extract_embeddings(model, loader, device):
+def extract_embeddings(model, loader, device, D=128):
     model.eval()
     all_embeds, all_labels = [], []
     for x, y in loader:
@@ -51,10 +51,10 @@ def extract_embeddings(model, loader, device):
         x_flat = x.reshape(batch * T_, C, L)
         F_pp = model.mle(x_flat)
         g_flat = model.dam_stack(F_pp)
-        G = g_flat.reshape(batch, T_, model.D)
+        G = g_flat.reshape(batch, T_, D)
         O = model.sbm_stack(G)  # (batch, T, D) -- the embedding we want
 
-        all_embeds.append(O.reshape(-1, model.D).cpu().numpy())
+        all_embeds.append(O.reshape(-1, D).cpu().numpy())
         all_labels.append(y.reshape(-1).numpy())
 
     return np.concatenate(all_embeds), np.concatenate(all_labels)
