@@ -1,0 +1,9 @@
+{
+  "note": "Per-seed and per-class breakdown lost to a Kaggle session interruption after training completed but before results were captured. Only the final mean/std summary (printed to the training log before the session died) was preserved. This matches the paper's own Table 7 reporting granularity (mean +/- std only), so the comparison to the paper is unaffected -- only our own cross-variant per-seed analysis capability is reduced for this one variant.",
+  "summary": {
+    "acc":   {"mean": 0.8126, "std": 0.0023},
+    "kappa": {"mean": 0.7443, "std": 0.0030},
+    "mf1":   {"mean": 0.7775, "std": 0.0006}
+  },
+  "n_params": 1077913
+}
